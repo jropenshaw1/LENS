@@ -1,5 +1,5 @@
 # LENS Functional Spec v1.0
-**Status:** Ratified — updated to reflect ADR-003 (confidence-gated auto-capture) and ADR-006 (tiered retention deferred to v1.1)
+**Status:** Ratified — updated to reflect ADR-003 (confidence-gated auto-capture), ADR-006 (tiered retention deferred to v1.1), persistent TTL notices with SQL, and confidence validation checkpoint
 **Date:** March 16, 2026
 **Follows:** Data Dictionary v1.0
 **Precedes:** ADR Log v1.0
@@ -253,24 +253,82 @@ Behavior change: [one concrete suggestion]. Model bias check: [clean/flagged].
 ### 4.1 Policy
 Raw prompt fields (`original_prompt`, `optimized_prompt`) are retained for 90 days per
 Data Dictionary Section 6. Tiered retention with aggregate synthesis is deferred to v1.1
-per ADR-006. At v1.0, only manual redaction is supported.
+per ADR-006. At v1.0, only manual SQL redaction in Supabase is supported.
 
-### 4.2 v1.0 Implementation — Manual Redaction at Report Time
+### 4.2 v1.0 Implementation — Persistent Notice with SQL at Every Report
 
 OpenBrain (OB1 v2) does not currently expose a field-level update or delete tool. The
 90-day TTL is aspirational, not architectural, at v1.0 (see ADR-005 for the honest assessment
 of this gap).
 
-**At each LENS report request:**
-1. Retrieve all LENS-capture thoughts
-2. Identify captures older than 90 days with unredacted raw prompt fields
-3. If any exist, surface them:
-   > "[N] LENS captures from [date range] have raw prompt fields past the 90-day retention
-   > policy. Manual redaction is required — OpenBrain does not yet support automated TTL.
-   > Review and redact manually in Supabase Table Editor, or acknowledge and continue."
-4. Do not attempt to write redacted values — OpenBrain update tool is not available.
+**Behavior:** The TTL notice is persistent — it fires at every LENS report until redaction
+has been completed. Missing a notice does not clear it. The next report will surface it again
+with the same SQL, updated to reflect the current count of expired captures.
 
-### 4.3 Deferred to v1.1
+**At each LENS report request:**
+1. Retrieve all LENS-capture thoughts tagged `[artifact:LENS-capture]`
+2. Identify captures older than 90 days with unredacted raw prompt fields
+3. If any exist, surface the notice AND generate ready-to-run SQL:
+
+> **TTL Notice: [N] LENS captures from [earliest date] to [latest date] have raw prompt
+> fields past the 90-day retention policy.**
+>
+> Run this SQL in the Supabase SQL Editor to redact them:
+>
+> ```sql
+> -- Step 1: Preview captures to be redacted (run this first)
+> SELECT id, created_at, LEFT(content, 120) AS content_preview
+> FROM thoughts
+> WHERE content LIKE '%[artifact:LENS-capture]%'
+>   AND created_at < NOW() - INTERVAL '90 days'
+>   AND content NOT LIKE '%[REDACTED-90d]%';
+>
+> -- Step 2: Run redaction after reviewing the preview above
+> UPDATE thoughts
+> SET content = REGEXP_REPLACE(
+>     REGEXP_REPLACE(
+>         content,
+>         'original_prompt: .*',
+>         'original_prompt: [REDACTED-90d]'
+>     ),
+>     'optimized_prompt: .*',
+>     'optimized_prompt: [REDACTED-90d]'
+> )
+> WHERE content LIKE '%[artifact:LENS-capture]%'
+>   AND created_at < NOW() - INTERVAL '90 days'
+>   AND content NOT LIKE '%[REDACTED-90d]%';
+> ```
+>
+> This notice will repeat at every LENS report until redaction is complete.
+
+4. Continue with the LENS report after surfacing the notice — do not block on redaction.
+
+**Note:** Always run the SELECT preview before the UPDATE to confirm the correct rows will
+be affected. Back up the thoughts table before running UPDATE if capture volume is large.
+
+### 4.3 Confidence Score Validation
+
+Because `underspecification_confidence` is AI self-reported, its calibration must be
+validated empirically after v1.0 goes live. The spec cannot guarantee accuracy before
+real capture data exists.
+
+**Validation approach — 30-day checkpoint:**
+At the first LENS report after 30 days of operation, the AI reviews auto-captured
+(confidence 4–5) entries and asks:
+
+> "You have [N] auto-captured LENS entries from the past 30 days. Did any feel incorrectly
+> captured — either not a genuine underspecification, or one you would have edited if asked?
+> Your feedback will inform whether the confidence threshold needs adjustment."
+
+**Calibration adjustments:**
+- Frequent incorrect auto-captures at confidence 4 → raise auto-capture threshold to 5 only
+- Very few captures overall → consider lowering manual ratification threshold from 3 to 2
+
+**Documentation:** Calibration findings are captured as a LENS-pattern thought tagged
+`[artifact:LENS-pattern] [subtype:calibration]` so the adjustment history is preserved
+across sessions.
+
+### 4.4 Deferred to v1.1
 Tiered retention (granular 0–90 days, aggregate 90–180 days, indefinite thereafter) and
 LENS-aggregate thought synthesis are deferred to v1.1 after real capture data quality has
 been assessed. See ADR-006.
@@ -361,7 +419,10 @@ It is not necessary for:
 | Pattern detection trigger | On-demand only — not scheduled |
 | Minimum corpus for patterns | 10 captures |
 | Model bias check | Required in every pattern report |
-| TTL implementation | Manual flag at report time — no automated redaction at v1.0 |
+| TTL notice | Persistent — fires at every LENS report until redaction complete |
+| TTL SQL | Generated fresh at every TTL notice — ready to run in Supabase |
+| Confidence validation | 30-day checkpoint with calibration adjustment path |
+| TTL implementation | Manual SQL in Supabase — no automated redaction at v1.0 |
 | Tiered retention | Deferred to v1.1 (ADR-006) |
 | Block-based structure | Five components including [WHY] — recommended best practice, not mandated |
 
