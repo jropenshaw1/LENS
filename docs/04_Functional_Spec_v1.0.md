@@ -1,5 +1,5 @@
 # LENS Functional Spec v1.0
-**Status:** Ratified
+**Status:** Ratified — updated to reflect ADR-003 (confidence-gated auto-capture) and ADR-006 (tiered retention deferred to v1.1)
 **Date:** March 16, 2026
 **Follows:** Data Dictionary v1.0
 **Precedes:** ADR Log v1.0
@@ -19,16 +19,24 @@ and Use Case Spec define *what* LENS does, this document defines *how* it does i
 
 ### 2.1 Overview
 
-The capture flow has five stages: Detect, Evaluate, Propose, Ratify, Write. The flow is
-identical for CLARIFICATION_TRIGGER and ASSUMPTION_TRIGGER. SUCCESS_PATTERN (LENS+) enters
-at Stage 3.
+The capture flow has five stages: Detect, Evaluate, Route, Write/Ratify, Confirm.
+Routing at Stage 3 depends on `underspecification_confidence` — high-confidence captures
+(4–5) bypass ratification and write automatically. Medium-confidence captures (3) require
+manual ratification. SUCCESS_PATTERN (LENS+) always requires ratification regardless of
+confidence.
 
 ```
-CLARIFICATION_TRIGGER / ASSUMPTION_TRIGGER:
-  Stage 1: Detect → Stage 2: Evaluate → Stage 3: Propose → Stage 4: Ratify → Stage 5: Write
+CLARIFICATION_TRIGGER / ASSUMPTION_TRIGGER (confidence 4–5):
+  Stage 1: Detect → Stage 2: Evaluate → Stage 3: Route → Stage 5: Auto-Write → Stage 5b: Notify
+
+CLARIFICATION_TRIGGER / ASSUMPTION_TRIGGER (confidence 3):
+  Stage 1: Detect → Stage 2: Evaluate → Stage 3: Route → Stage 4: Propose → Stage 4b: Ratify → Stage 5: Write
+
+CLARIFICATION_TRIGGER / ASSUMPTION_TRIGGER (confidence 1–2):
+  Stage 1: Detect → Stage 2: Evaluate → Stage 3: Route → Suppressed (no capture)
 
 SUCCESS_PATTERN (LENS+):
-  Stage 3: Propose → Stage 4: Ratify → Stage 5: Write
+  Stage 4: Propose → Stage 4b: Ratify → Stage 5: Write
 ```
 
 ---
@@ -79,14 +87,28 @@ constructs the capture record:
 11. **underspecification_confidence** — score 1–5 based on certainty that the prompt was
     genuinely underspecified vs. intentionally brief
 
-**Evaluation rule:** If underspecification_confidence is 1 or 2, do not propose the capture.
-Low-confidence triggers produce noise. The session cap is preserved for higher-signal captures.
+---
+
+### 2.4 Stage 3 — Route
+
+Route the capture based on `underspecification_confidence`:
+
+| Confidence | Action |
+|------------|--------|
+| 1–2 | Suppress. No capture proposed. Session cap not incremented. |
+| 3 | Proceed to Stage 4 — manual ratification required. |
+| 4–5 | Skip Stage 4 — proceed directly to Stage 5 auto-write, then Stage 5b notify. |
+
+**Rationale for confidence-gated routing (ADR-003):** High-confidence captures (4–5) are
+clear-cut trigger events where the AI's interpretation is unlikely to require correction.
+Auto-capturing them reduces missed signals without materially degrading dataset quality.
+Confidence 3 captures sit at the boundary where user judgment adds the most value.
 
 ---
 
-### 2.4 Stage 3 — Propose
+### 2.5 Stage 4 — Propose (confidence 3 and SUCCESS_PATTERN only)
 
-The AI presents the proposed capture to the user for ratification. Format:
+**For confidence 3 captures:**
 
 > **LENS capture proposed**
 >
@@ -95,11 +117,11 @@ The AI presents the proposed capture to the user for ratification. Format:
 > **What was missing:** [missing_dimension — one sentence]
 > **Optimized prompt:** "[AI-authored optimized prompt]"
 > **Why it's better:** [delta_reason — one sentence]
-> **Confidence:** [underspecification_confidence]/5
+> **Confidence:** 3/5
 >
 > Confirm, edit, or skip?
 
-For SUCCESS_PATTERN (LENS+):
+**For SUCCESS_PATTERN (LENS+):**
 
 > **LENS+ capture proposed**
 >
@@ -108,30 +130,27 @@ For SUCCESS_PATTERN (LENS+):
 >
 > Confirm, edit, or skip?
 
-**Timing:** The proposal appears after the response is delivered — never interrupting the
-response itself. LENS is additive. It does not delay execution.
-
----
-
-### 2.5 Stage 4 — Ratify
-
-Three user responses are valid:
+**Stage 4b — Ratify:**
 
 | Response | Action |
 |----------|--------|
 | "Confirm" / "yes" / affirmative | Proceed to Stage 5 with record as proposed |
-| Edit (user provides corrections) | Update the record with user's edits, then proceed to Stage 5 |
-| "Skip" / "no" / negative | No capture. No record. LENS does not retry. Session cap is NOT incremented. |
+| Edit (user provides corrections) | Update record with user's edits, proceed to Stage 5 |
+| "Skip" / "no" / negative | No capture. No record. LENS does not retry. Session cap NOT incremented. |
 
 **Context contamination rule:** LENS captures are write-only from the executing AI during
 live sessions. The AI proposing the capture writes it. No other AI client writes to another
 client's LENS captures.
 
+**Timing:** Proposals appear after the response is delivered — never interrupting the response
+itself. LENS is additive. It does not delay execution.
+
 ---
 
 ### 2.6 Stage 5 — Write
 
-On user confirmation, the AI writes to OpenBrain using `capture_thought`:
+On auto-route (confidence 4–5) or user confirmation (confidence 3, LENS+), the AI writes
+to OpenBrain using `capture_thought`:
 
 **Thought content format:**
 ```
@@ -149,14 +168,22 @@ assumption_resolution_mode: [value or null]
 optimized_prompt: [value]
 delta_reason: [value]
 underspecification_confidence: [value]
+capture_mode: [auto | ratified]
 outcome_status: [null — populated later if user provides feedback]
 improvement_dimension: [null — populated later]
 effective_pattern: [null — or value for SUCCESS_PATTERN]
 ```
 
+Note: `capture_mode` field added to distinguish auto-captured entries from ratified ones.
+This enables filtering by capture mode in pattern analysis.
+
 After write, increment the session capture count by 1.
 
-Confirm to user: "Captured." — nothing more. Keep it lightweight.
+**Stage 5b — Notify (auto-captures only):**
+
+> "LENS auto-captured: [missing_dimension — one sentence]. Review with 'show LENS queue'."
+
+Keep it brief. Do not block on a response.
 
 ---
 
@@ -164,7 +191,7 @@ Confirm to user: "Captured." — nothing more. Keep it lightweight.
 
 ### 3.1 Overview
 
-Pattern detection synthesizes LENS-correction thoughts into LENS-pattern thoughts. It runs
+Pattern detection synthesizes LENS-capture thoughts into LENS-pattern thoughts. It runs
 on-demand when the user requests a prompting skill review — not on a schedule.
 
 ### 3.2 Detection trigger
@@ -225,52 +252,28 @@ Behavior change: [one concrete suggestion]. Model bias check: [clean/flagged].
 
 ### 4.1 Policy
 Raw prompt fields (`original_prompt`, `optimized_prompt`) are retained for 90 days per
-Data Dictionary Section 6. This is a policy decision; implementation is the AI's responsibility
-at report time.
+Data Dictionary Section 6. Tiered retention with aggregate synthesis is deferred to v1.1
+per ADR-006. At v1.0, only manual redaction is supported.
 
-### 4.2 Tiered Retention Model
+### 4.2 v1.0 Implementation — Manual Redaction at Report Time
 
-LENS uses a two-tier retention approach that preserves analytical value while reducing
-long-term privacy exposure:
-
-**Tier A — Granular (0–90 days)**
-Full capture records retained including `original_prompt` and `optimized_prompt`. Supports
-detailed per-capture analysis and pattern detection against raw content.
-
-**Tier B — Aggregate (90–180 days)**
-At the 90-day mark, raw prompt fields are redacted and replaced with a `LENS-aggregate`
-thought summarizing the window. The aggregate captures:
-- Frequency distribution of `ambiguity_type` for the 90-day window
-- Top `prompt_type` + `ambiguity_type` combinations
-- Average `underspecification_confidence`
-- Model breakdown (captures per AI model)
-- Trend direction vs. prior window
-
-**After 180 days:** Aggregate thoughts are retained indefinitely. They contain no raw content
-and carry full long-term analytical value including cross-AI-release comparisons.
-
-**Value of tiered retention:** When a new AI model releases, aggregate thoughts allow
-comparison of prompting patterns across model generations — revealing whether behavior changes
-are improvements, regressions, or model-specific artifacts rather than user-behavioral shifts.
-
-### 4.3 Implementation approach
-
-OpenBrain does not currently support automatic TTL on individual fields. The implementation
-is manual, triggered at pattern detection report time:
+OpenBrain (OB1 v2) does not currently expose a field-level update or delete tool. The
+90-day TTL is aspirational, not architectural, at v1.0 (see ADR-005 for the honest assessment
+of this gap).
 
 **At each LENS report request:**
 1. Retrieve all LENS-capture thoughts
 2. Identify captures older than 90 days with unredacted raw prompt fields
-3. Synthesize a `LENS-aggregate` thought for the expiring window (format per Section 4.2)
-4. Propose redaction:
-   > "[N] LENS captures from [date range] have raw prompt fields due for redaction.
-   > Aggregate summary has been prepared. Redact now? (Replaces original_prompt and
-   > optimized_prompt with [REDACTED-90d] while preserving all derived metadata.)"
-5. On user confirmation, capture the aggregate thought, then update expired captures
+3. If any exist, surface them:
+   > "[N] LENS captures from [date range] have raw prompt fields past the 90-day retention
+   > policy. Manual redaction is required — OpenBrain does not yet support automated TTL.
+   > Review and redact manually in Supabase Table Editor, or acknowledge and continue."
+4. Do not attempt to write redacted values — OpenBrain update tool is not available.
 
-**Note:** OpenBrain does not currently expose an update tool. Until an update tool is available,
-the AI should flag expired captures for manual review rather than attempting to redact.
-This is a v1.0 limitation — see ADR Log for the full decision.
+### 4.3 Deferred to v1.1
+Tiered retention (granular 0–90 days, aggregate 90–180 days, indefinite thereafter) and
+LENS-aggregate thought synthesis are deferred to v1.1 after real capture data quality has
+been assessed. See ADR-006.
 
 ---
 
@@ -348,19 +351,21 @@ It is not necessary for:
 
 | Decision | Value |
 |----------|-------|
-| Capture flow | 5-stage: Detect → Evaluate → Propose → Ratify → Write |
-| Low-confidence suppression | Confidence 1–2 suppresses the capture proposal |
+| Capture flow | 5-stage with confidence-gated routing at Stage 3 |
+| Confidence 4–5 | Auto-capture with lightweight notification — no ratification |
+| Confidence 3 | Manual ratification required |
+| Confidence 1–2 | Suppressed — no capture proposed |
+| capture_mode field | Added to distinguish auto vs. ratified entries |
 | Session cap behavior | Silently suppressed; declined captures do not increment count |
 | Proposal timing | After response delivery — never interrupts execution |
 | Pattern detection trigger | On-demand only — not scheduled |
 | Minimum corpus for patterns | 10 captures |
 | Model bias check | Required in every pattern report |
-| Tiered retention | Granular 0–90 days; aggregate 90–180 days; indefinite thereafter |
-| TTL implementation | Manual at report time; field-level redaction pending update tool |
+| TTL implementation | Manual flag at report time — no automated redaction at v1.0 |
+| Tiered retention | Deferred to v1.1 (ADR-006) |
 | Block-based structure | Five components including [WHY] — recommended best practice, not mandated |
-| [WHY] component | Explicitly added as a high-value prompting behavior to develop |
 
 ---
 
-*LENS Functional Spec v1.0 — Ratified March 16, 2026*
+*LENS Functional Spec v1.0 — Updated March 16, 2026*
 *Next document: ADR Log v1.0*
