@@ -1,5 +1,5 @@
 # LENS Use Case Spec v1.0
-**Status:** Draft — pending ratification
+**Status:** Ratified
 **Date:** March 16, 2026
 **Follows:** LENS Charter v1.0
 **Precedes:** Data Dictionary v1.0
@@ -215,5 +215,5 @@ The following questions are deferred to the Data Dictionary:
 
 ---
 
-*LENS Use Case Spec v1.0 — Draft*
+*LENS Use Case Spec v1.0 — Ratified March 16, 2026*
 *Next document: Data Dictionary v1.0*
