@@ -421,6 +421,131 @@ ADR. The decision and rationale are documented in Functional Spec Section 5.2.
 
 ---
 
+---
+
+## ADR-009: AegisRelay as Runtime Enforcement Layer
+
+**Date:** March 22, 2026
+**Status:** Accepted
+**Decided by:** Jonathan Openshaw
+**Related:** AegisRelay ADR-009 (mirror decision from AegisRelay perspective)
+**Follows:** ADR-008 (Protocol Positioning)
+
+### Context
+
+ADR-008 established that LENS is a protocol specification, not middleware, and explicitly
+named AegisRelay as "the natural runtime enforcement layer for LENS constraints when
+enforcement infrastructure is warranted." Charter Section 11 defined the enforcement chain:
+
+```
+LENS Protocol (specifies) → AI Client (implements) → Session behavior (enforces)
+```
+
+And noted that if AegisRelay is deployed, it becomes an additional enforcement agent.
+
+What neither document defined was the precise integration architecture — how AegisRelay
+implements LENS constraints, where each behavior maps in AegisRelay's call flow, and what
+changes (if anything) in the LENS protocol as a result of having a runtime enforcement
+layer available.
+
+This ADR closes that gap from LENS's perspective.
+
+### Decision
+
+AegisRelay implements LENS via two hooks that bracket the provider call, plus two existing
+pipeline stage assignments. The full mapping is defined in AegisRelay ADR-009. From LENS's
+perspective, three things are now formally true:
+
+**1. The enforcement chain has a named concrete implementation.**
+
+The enforcement chain from Charter Section 11 is updated to reflect the AegisRelay
+integration:
+
+```
+LENS Protocol (specifies)
+        ↓
+AegisRelay governance hooks (enforce at relay boundary)
+        ↓
+AI Client canonical reference (enforce in conversational sessions)
+        ↓
+Session behavior (observable output)
+```
+
+Both enforcement paths are valid and complementary. AegisRelay governs provider calls.
+AI client canonical reference governs conversational sessions. Neither replaces the other.
+
+**2. The six behaviors have a defined runtime home in AegisRelay.**
+
+| LENS Behavior | AegisRelay Implementation |
+|---------------|---------------------------|
+| Decision Checkpoints | Pre-call hook — fires before provider invocation |
+| Assumption Surfacing | Pre-call hook — fires before provider invocation |
+| Prompt Reflection | Post-call hook — fires after response received |
+| Reframe Offers | Post-call hook — fires after response received |
+| Uncertainty Flagging | Pipeline Stage 4 (Mark Uncertainty) |
+| Cognitive Model Disclosure | Pipeline Stage 3 (Classify) |
+
+**3. The machine-readable constraint schema is the integration contract.**
+
+The JSON constraint schema from Functional Spec Section 7.5 is the specification
+AegisRelay's hooks implement. It is not aspirational — it is the v1 integration contract.
+
+### What Does Not Change in LENS
+
+The protocol itself is unchanged by this ADR. All six behaviors, their trigger conditions,
+violation definitions, and compliance rubric (Functional Spec Section 7.2) remain as
+specified. AegisRelay implements LENS; it does not modify it.
+
+The learning loop (LENS-correction, LENS-pattern thoughts in OpenBrain) remains active
+for conversational sessions regardless of AegisRelay deployment. AegisRelay adds a second
+enforcement surface; it does not replace the existing one.
+
+### v1 Enforcement Boundary — Updated
+
+Charter Section 11.3 stated that "violation detection is retrospective and user-driven
+at v1.0." This remains true for conversational sessions. For AegisRelay-mediated sessions,
+the enforcement boundary at v1 is:
+
+**Observational enforcement:** AegisRelay pre-call and post-call hooks fire, evaluate
+against LENS trigger conditions, and write observations to `governance_events`. No
+blocking, no automated violation detection, no LENS-correction thoughts written
+automatically. Human operator reviews governance_events to identify violations.
+
+**v2 enforcement boundary (defined, not yet implemented):**
+- Pre-call hook becomes a blocking gate for Decision Checkpoint events
+- Post-call hook evaluates against the full compliance rubric and writes
+  LENS-correction thoughts automatically tagged `[source:automated]`
+- Per-session LENS compliance score produced from governance_events analysis
+
+The v2 boundary directly addresses the gap Gee identified in the March 2026 pressure test:
+"What happens when a model violates LENS in production?" At v2, the answer is:
+"AegisRelay detects it, records it, and surfaces it — automatically."
+
+### OpenBrain Sync Implications
+
+AegisRelay's governance_events rows for LENS observations are not automatically synced to
+OpenBrain at v1. OpenBrain remains the repository for conversational session LENS captures
+(LENS-correction, LENS-pattern thoughts).
+
+At v2, high-confidence LENS violation detections from AegisRelay may be synced to OpenBrain
+as LENS-correction thoughts tagged `[source:automated] [source:aegisrelay]`, enabling
+unified pattern analysis across both enforcement surfaces. This requires AegisRelay's
+optional OpenBrain sync module (ADR-002) to be extended with a LENS-specific export filter.
+
+### Consequences
+
+- The LENS enforcement chain is concrete, not theoretical — it names a specific
+  implementation (AegisRelay hooks) alongside the existing conversational enforcement path
+- The six behaviors have a documented runtime home for AegisRelay-mediated sessions
+- v1 enforcement is observational — the protocol's existing learning loop handles detection
+- v2 path is defined and traceable: blocking gate, automated violation detection,
+  cross-surface pattern analysis via OpenBrain sync
+- LENS portability is preserved — this ADR defines AegisRelay as one implementation;
+  other systems can implement LENS independently using the same constraint schema
+
+---
+
 *LENS ADR Log v1.0 — Ratified March 16, 2026*
 *ADR-008 added March 22, 2026*
+*ADR-009 added March 22, 2026*
 *Next document: Definition of Done v1.0*
