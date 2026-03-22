@@ -1,5 +1,5 @@
 # LENS ADR Log v1.0
-**Status:** Draft — pending ratification
+**Status:** Ratified
 **Date:** March 16, 2026
 **Follows:** Functional Spec v1.0
 **Precedes:** Definition of Done v1.0
@@ -289,6 +289,130 @@ requires remembering to invoke it — contradicting the passive design principle
 
 ---
 
+## ADR-008: LENS Is a Protocol Specification, Not a Middleware Enforcement Layer
+
+**Date:** March 22, 2026
+**Status:** Accepted
+**Decided by:** Jonathan Openshaw
+**Context input from:** Gee (ChatGPT) pressure test, March 2026; Claude analysis
+
+### Context
+During a structured pressure test of LENS v1.0 by Gee (ChatGPT), the following critique was
+raised:
+
+> "Right now, LENS behaves like a prompt discipline framework. Prompts are not enforceable.
+> They degrade across chains. They are not auditable. If LENS stays prompt-based, it caps out
+> as a methodology, not a product."
+
+The critique proposed evolving LENS into a middleware enforcement layer — one that intercepts
+prompts, injects constraints as structured objects, evaluates outputs post-call, scores
+compliance, and optionally rejects or retries. The implicit framing was that remaining
+"protocol-based" is a limitation to be overcome.
+
+This ADR records the evaluation of that critique and the architectural decision that follows.
+
+### Options Considered
+
+**Option A — Evolve LENS into middleware**
+
+LENS becomes a runtime enforcement component: an ingress/egress layer sitting between the
+user and AI providers. It intercepts calls, injects constraints, evaluates outputs, and
+produces compliance scores. Enforcement is architectural — non-compliant outputs can be
+rejected or retried automatically.
+
+*Consequences:*
+- Requires infrastructure build: intercept layer, evaluation engine, scoring pipeline
+- Couples LENS to a specific runtime architecture
+- Increases implementation complexity by an order of magnitude
+- Competes with AegisRelay's scope rather than complementing it
+- Shifts LENS from a protocol that any AI client can adopt to a product requiring
+  specific integration work
+
+*Valid for:* A funded product development effort targeting enterprise middleware buyers.
+
+**Option B — Remain as protocol specification, but make the positioning deliberate**
+
+LENS is a protocol specification. It defines expected behaviors, trigger conditions,
+compliance criteria, and an enforcement model. The implementing AI client is the enforcement
+agent — it reads the protocol, loads the canonical reference, and executes accordingly.
+LENS does not enforce at runtime because it is not a runtime component. It specifies what
+compliant runtime behavior looks like.
+
+This is the same relationship that:
+- TCP/IP has with the networking stack that implements it
+- ITIL has with the IT service management operations that satisfy it
+- NIST CSF has with the security controls that implement it
+- COBIT has with the governance practices built on top of it
+
+None of these frameworks enforce at runtime. All define what compliant behavior looks like,
+who is responsible for compliance, and how compliance is measured. Their value is precisely
+that they are portable — any implementation can adopt them without the framework owning
+the enforcement layer.
+
+*Consequences:*
+- LENS remains portable across AI clients without integration work
+- Enforcement responsibility is explicit and documented (Charter Section 11)
+- Compliance is measurable through the learning loop and compliance rubric
+  (Functional Spec Section 7) without requiring a runtime evaluation engine
+- LENS and AegisRelay remain complementary: LENS is the constraint specification;
+  AegisRelay is a natural home for runtime implementations that enforce LENS constraints
+- The protocol/middleware distinction is a narrative strength, not a limitation
+
+### Decision
+**Option B.** LENS is and remains a protocol specification. This is the correct
+architecture for LENS v1.0 and the foreseeable future.
+
+The Gee critique correctly identified that LENS has no runtime enforcement boundary. The
+error in the critique was treating that as a flaw. It is a design choice — one that gives
+LENS portability, vendor neutrality, and a natural integration point with AegisRelay rather
+than competing with it.
+
+The appropriate response to the critique is not to build middleware. It is to make the
+protocol positioning explicit in the documentation, define the enforcement model clearly
+(Charter Section 11), and establish a compliance framework that makes LENS measurable
+without requiring a runtime enforcement engine (Functional Spec Section 7).
+
+### Why "Protocol, Not Middleware" Is the Stronger Position
+
+A middleware enforcement layer would require every AI client to integrate with LENS
+infrastructure. That creates vendor lock-in, implementation friction, and maintenance
+surface area. It also means LENS only governs sessions where the middleware is deployed.
+
+A protocol specification governs any session where the implementing AI has loaded the
+LENS canonical reference — regardless of provider, client, or infrastructure. That is
+a broader governance surface, not a narrower one.
+
+The enterprise framing is accurate: organizations do not want AI governed only where a
+specific middleware product is deployed. They want AI that behaves correctly everywhere
+it is used. Protocol specifications achieve that. Middleware products do not.
+
+### Relationship to AegisRelay
+
+This decision explicitly positions AegisRelay as the natural runtime enforcement layer
+for LENS constraints when enforcement infrastructure is warranted. AegisRelay intercepts
+AI calls. LENS defines what those calls should look like and what compliant outputs contain.
+Together they form a governed multi-model execution architecture. Separately, they are
+both valid: LENS without AegisRelay is still a governance protocol any AI client can adopt;
+AegisRelay without LENS is a routing layer without a constraint specification.
+
+The integration of LENS constraint evaluation into AegisRelay is a separate backlog item.
+This ADR does not block or require it.
+
+### Consequences
+- The "protocol not middleware" positioning is explicit and documented — not an apparent
+  oversight in the absence of enforcement machinery
+- Charter Section 11 (Enforcement Model) added to define compliance responsibility
+  and violation semantics at the protocol level
+- Functional Spec Section 7 (Compliance Framework) added to establish measurable
+  compliance criteria per behavior
+- Option A (middleware evolution) remains a documented path — it is the correct choice
+  if LENS is ever developed as a standalone enterprise product; that decision requires
+  a new ADR
+- AegisRelay is identified as the natural enforcement layer for teams that want runtime
+  constraint evaluation on top of the LENS protocol
+
+---
+
 ## Note on [WHY] Prompt Component
 
 The addition of [WHY] as the second component of the block-based prompt structure is a
@@ -297,5 +421,6 @@ ADR. The decision and rationale are documented in Functional Spec Section 5.2.
 
 ---
 
-*LENS ADR Log v1.0 — Draft*
+*LENS ADR Log v1.0 — Ratified March 16, 2026*
+*ADR-008 added March 22, 2026*
 *Next document: Definition of Done v1.0*

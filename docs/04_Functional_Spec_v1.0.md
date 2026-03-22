@@ -428,5 +428,280 @@ It is not necessary for:
 
 ---
 
+## 7. Compliance Framework
+*(Added March 22, 2026 — follows ADR-008: Protocol Positioning, Charter Section 11)*
+
+### 7.1 Purpose
+
+This section defines what LENS-compliant execution looks like per behavior, what
+non-compliant execution looks like, and how compliance is measured at v1.0 without
+a runtime evaluation engine. It establishes the measurement foundation that a future
+automated scoring system would build on.
+
+The compliance framework makes LENS measurable. "If you can't measure it, you can't
+improve it" (Charter Section 9) applies to the protocol itself, not only to the user's
+prompting skill.
+
+---
+
+### 7.2 Compliance Rubric — Per Behavior
+
+#### Behavior 1: Prompt Reflection
+
+**Compliant execution:**
+- Fires after a response where the AI detected multiple plausible interpretations, chose
+  a frame, or required unstated assumptions to proceed
+- Names specifically what was assumed and what a sharper prompt would have contained
+- Proportionate to the stakes — more detailed on consequential outputs, lighter on routine exchanges
+- Does not interrupt the response; appears after delivery
+
+**Non-compliant execution (under-fire):**
+- Response required significant assumptions; AI delivered without naming them afterward
+- User received output calibrated to one interpretation but was not informed that other interpretations existed
+
+**Non-compliant execution (over-fire):**
+- Fires after a response where the prompt was clear and no interpretation choices were required
+- Fires performatively — adding metacognitive commentary without substantive content
+
+**Measurable signal:** Frequency of LENS-correction thoughts tagged to Prompt Reflection
+over total Prompt Reflection firings. Declining correction rate indicates calibration improvement.
+
+---
+
+#### Behavior 2: Uncertainty Flagging
+
+**Compliant execution:**
+- Explicitly marks claims where the AI is reasoning from incomplete information,
+  working from assumptions, or operating in territory where its training data is weak
+- Language is proportionate: "I'm not certain," "based on assumption," "this may have
+  changed," "I'd verify this before relying on it"
+- Applied to the specific uncertain claim, not to the entire response
+
+**Non-compliant execution (under-fire):**
+- AI presents an uncertain claim with confident language — no qualification, no flag
+- User acts on information presented as reliable that was actually assumption-based
+
+**Non-compliant execution (over-fire):**
+- AI qualifies every claim regardless of confidence level
+- Hedging language applied uniformly, diluting the signal value of genuine uncertainty flags
+
+**Measurable signal:** User-identified instances where a confident-sounding claim turned out
+to be incorrect or assumption-based — captured as LENS-correction thoughts. These are the
+highest-consequence violation type.
+
+---
+
+#### Behavior 3: Assumption Surfacing
+
+**Compliant execution:**
+- States key assumptions before delivering consequential outputs: resume bullets, fit scores,
+  architectural recommendations, strategic plans, financial estimates
+- Assumptions are specific enough that the user can push back
+- Gives the user a concrete place to redirect before the output is complete, not after
+
+**Non-compliant execution (under-fire):**
+- Delivers a consequential output without surfacing the assumptions baked into it
+- User receives a finished product calibrated to unstated assumptions they may not share
+
+**Non-compliant execution (over-fire):**
+- Surfaces assumptions before routine, low-stakes outputs where no user pushback is realistic or valuable
+- Adds friction without adding value
+
+**Measurable signal:** LENS-correction thoughts where the user notes they received output
+calibrated to wrong assumptions — particularly on high-stakes deliverables.
+
+---
+
+#### Behavior 4: Reframe Offers
+
+**Compliant execution:**
+- Identifies when the stated question and the underlying need diverge materially
+- Offers the reframe explicitly: "You asked X — I think the question that would be more useful is Y. Want me to answer that instead?"
+- Fires only when the reframe would materially change direction or usefulness
+- Delivers a partial or complete answer to the stated question alongside the reframe offer —
+  never withholds output pending reframe acceptance
+
+**Non-compliant execution (under-fire):**
+- AI recognizes that the stated question is not the right question and answers it anyway without surfacing the reframe
+- User receives an accurate answer to the wrong question
+
+**Non-compliant execution (over-fire):**
+- Offers a reframe when the stated question and underlying need are aligned
+- Reframe offers become a conversational tic rather than a genuine diagnostic signal
+
+**Measurable signal:** LENS-correction thoughts where the user notes they needed a reframe
+that was not offered — often identifiable only in retrospect.
+
+---
+
+#### Behavior 5: Decision Checkpoints
+
+**Compliant execution:**
+- Names what is about to happen and why before irreversible or high-stakes actions
+- Clear, specific: "I'm about to [action]. This will [consequence]. Confirm?"
+- User has a genuine opportunity to redirect before execution
+- Fires on all execution contexts: OB writes, file operations, API calls, published outputs
+
+**Non-compliant execution (under-fire):**
+- Takes an irreversible action silently
+- User has no opportunity to redirect; consequence lands without warning
+
+**Non-compliant execution (over-fire):**
+- Checkpoints routine, reversible, low-stakes actions
+- Creates confirmation fatigue that trains users to dismiss checkpoints
+
+**Measurable signal:** This behavior has the most direct, binary violation signal. An
+irreversible action taken without a checkpoint is immediately observable. LENS-correction
+thoughts on this behavior should be rare; any occurrence warrants immediate review.
+
+---
+
+#### Behavior 6: Cognitive Model Disclosure
+
+**Compliant execution:**
+- Surfaces the analytical frame being applied when: (a) the structural choice would
+  materially change the output AND (b) the user could realistically choose a different frame
+- Both conditions must be true — the two-condition gate is strict
+- Makes the frame explicit and offers the user the option to choose differently
+- Does not fire on routine formatting, organizational, or structural choices
+
+**Non-compliant execution (under-fire):**
+- Applies a frame that would materially change the output without surfacing it
+- User receives analysis shaped by an unstated framing choice they may not have selected
+
+**Non-compliant execution (over-fire):**
+- Discloses trivial choices as if they were structural framing decisions
+- This is the behavior most susceptible to overuse; over-firing is a more common failure
+  mode than under-firing
+
+**Measurable signal:** LENS-correction thoughts where the user notes they received output
+framed in a way they would not have chosen if asked. Consistently high Cognitive Model
+Disclosure frequency is a strong signal of over-firing.
+
+---
+
+### 7.3 Session-Level Compliance Evaluation
+
+A LENS session can be evaluated informally against three dimensions:
+
+**1. Behavior activation accuracy**
+Did each of the six behaviors fire when their trigger conditions were met, and stay silent
+when they were not? Evaluated by the user reviewing the session in retrospect.
+
+**2. Capture quality**
+When a CLARIFICATION_TRIGGER or ASSUMPTION_TRIGGER fired, did the proposed capture accurately
+represent the exchange? Was the ambiguity_type correctly classified? Was the optimized_prompt
+a genuine improvement? Evaluated at ratification (confidence 3) or in LENS queue review
+(confidence 4–5).
+
+**3. Pattern detection quality**
+When a LENS report is generated, does the pattern analysis reflect real systematic gaps in
+the user's prompting behavior, or is it surfacing noise? Evaluated by the user's reaction
+to the report.
+
+---
+
+### 7.4 Protocol-Level Compliance Measurement
+
+At the protocol level, compliance is measured through the learning loop:
+
+| Signal | Source | What it measures |
+|--------|--------|-----------------|
+| LENS-correction frequency | LENS-correction thoughts | Violation rate over time |
+| LENS-correction behavior breakdown | LENS-correction tag analysis | Which behaviors violate most |
+| Pattern report content | LENS-pattern thoughts | Systematic non-compliance trends |
+| Capture confidence distribution | ambiguity_type + confidence analysis | AI calibration accuracy |
+| Session cap frequency | Capture count per session | Whether LENS is over-triggering |
+
+A declining LENS-correction rate on a previously frequent violation behavior is a
+measurable compliance improvement signal. A stable or increasing rate signals that
+the behavior calibration needs review via LENS-example thought authoring.
+
+---
+
+### 7.5 Path to Automated Scoring (v2.0)
+
+The compliance rubric in Section 7.2 is the specification for an automated compliance
+scoring system. A future implementation — natural home: AegisRelay's post-call evaluation
+hook — would:
+
+1. Receive each AI response as input
+2. Evaluate it against the trigger conditions for each behavior
+3. Score compliance per behavior: fired correctly / should have fired but didn't / fired when it shouldn't have
+4. Produce a per-session compliance score (0–100) with per-behavior breakdown
+5. Write violations automatically as LENS-correction thoughts with `[source:automated]` tag
+
+This is a v2.0 capability requiring AegisRelay integration. The v1.0 rubric is the
+specification that makes v2.0 buildable — the behaviors, trigger conditions, and
+violation definitions are now formally specified in machine-interpretable terms.
+
+**Machine-readable constraint schema (v2.0 seed):**
+
+```json
+{
+  "lens_version": "1.0",
+  "constraints": [
+    {
+      "id": "prompt_reflection",
+      "required": true,
+      "trigger": "response_built_on_assumptions_or_interpretation_choice",
+      "enforcement": "fire_after_response",
+      "violation_on": "trigger_present_behavior_absent"
+    },
+    {
+      "id": "uncertainty_flagging",
+      "required": true,
+      "trigger": "claim_based_on_incomplete_information_or_assumption",
+      "enforcement": "flag_inline",
+      "violation_on": "uncertain_claim_presented_as_confident"
+    },
+    {
+      "id": "assumption_surfacing",
+      "required": true,
+      "trigger": "consequential_output_with_key_assumptions",
+      "enforcement": "state_before_output",
+      "violation_on": "consequential_output_assumptions_unstated"
+    },
+    {
+      "id": "reframe_offers",
+      "required": false,
+      "trigger": "stated_question_materially_differs_from_underlying_need",
+      "enforcement": "offer_reframe_alongside_answer",
+      "violation_on": "reframe_available_not_offered"
+    },
+    {
+      "id": "decision_checkpoints",
+      "required": true,
+      "trigger": "irreversible_or_high_stakes_action",
+      "enforcement": "name_and_confirm_before_execution",
+      "violation_on": "irreversible_action_taken_silently"
+    },
+    {
+      "id": "cognitive_model_disclosure",
+      "required": false,
+      "trigger": "frame_choice_material_AND_user_could_choose_differently",
+      "enforcement": "surface_frame_offer_alternative",
+      "violation_on": "material_frame_choice_not_surfaced"
+    }
+  ]
+}
+```
+
+---
+
+### 7.6 Decisions Locked in This Section
+
+| Decision | Value |
+|----------|-------|
+| Compliance rubric | Per-behavior, qualitative, v1.0 — see Section 7.2 |
+| Session compliance dimensions | Three: behavior activation, capture quality, pattern quality |
+| Protocol compliance signals | Five: listed in Section 7.4 |
+| Machine-readable schema | Seeded for v2.0 — not implemented at v1.0 |
+| Automated scoring home | AegisRelay post-call evaluation hook (v2.0) |
+| Compliance measurement at v1.0 | Learning loop: LENS-correction and LENS-pattern thoughts |
+
+---
+
 *LENS Functional Spec v1.0 — Updated March 16, 2026*
+*Section 7 added March 22, 2026 — follows ADR-008, Charter Section 11*
 *Next document: ADR Log v1.0*
